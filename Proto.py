@@ -20,10 +20,10 @@ class Particle:
     def set_coordinates(self, values):
         self.coordinates = values
 
-#Ýòà ôóíêöèÿ âû÷èñëÿåò ìàññèâ äåéñòâóþùèõ íà ÷àñòèöû ñèë, èñõîäÿ èç ìàññèâà èõ ìåñòîïîëîæåíèÿ.
-#Íà ÷àñòèöó äåéñòâóþò ñèëà ãðàâèòàöèè (F = G/r) è ìåæìîëåêóëÿðíûå ñèëû, ðàâíûå ïðîèçâîäíîé ïîòåíöèàëà Ìîðçå ïî r.
-#Ïîòåíöèàë Ìîðçå õàðàêòåðèçóåòñÿ ïàðàìåòðàìè a("æåñòêîñòü" ïîòåíöèàëà) è ðàâíîâåñíûì ðàññòîÿíèåì r0.
-@nb.jit(nopython=True) #Äåêîðàòîð èç ìîäóëÿ numba êîìèëèðóåò ýòó ôóíêöèþ íà õîäó, îáåñïå÷èâàÿ ïðèðîñò ïðîèçâîäèòåëüíîñòè.
+#Эта функция вычисляет массив действующих на частицы сил, исходя из массива их местоположения.
+#На частицу действуют сила гравитации (F = G/r) и межмолекулярные силы, равные производной потенциала Морзе по r.
+#Потенциал Морзе характеризуется параметрами a("жесткость" потенциала) и равновесным расстоянием r0.
+@nb.jit(nopython=True) #Декоратор из модуля numba комилирует эту функцию на ходу, обеспечивая прирост производительности.
 def get_forces(positions):
     n_particles = positions.shape[0]
     forces =  np.zeros(positions.shape)
@@ -34,7 +34,7 @@ def get_forces(positions):
             dr = (dx * dx + dy * dy)**0.5
             ex = dx/dr
             ey = dy/dr
-            if dr>0.5: #Ìåæìîëåêóëÿðíûå âçàèìîäåéñòâèÿ íà áîëüøèõ ðàññòîÿíèÿõ îáðåçàþòñÿ
+            if dr>0.5: #Межмолекулярные взаимодействия на больших расстояниях обрезаются
                 force = G/dr
             else:
                 force = G/dr**2-2*a*math.exp(a*(r0-dr))*(math.exp(a*(r0-dr))-1)
@@ -44,7 +44,7 @@ def get_forces(positions):
             forces[j, 1] -= ey * force
     return(forces)
 
-#Ýòà ôóíêöèÿ âû÷èñëÿåò êèíåòè÷åñêóþ è ïîòåíöèàëüíóþ ýíåðãèþ ñèñòåìû â äàííîé êîíôèãóðàöèè.
+#Эта функция вычисляет кинетическую и потенциальную энергию системы в данной конфигурации.
 @nb.jit(nopython=True)
 def get_energy(positions, velocities):
     n_particles = positions.shape[0]
@@ -62,8 +62,8 @@ def get_energy(positions, velocities):
     return (kinetic_energy, gravitational_energy, intermolecular_energy)
 
 @nb.jit
-#Ïîçâîëÿåò ïîëó÷èòü ðàñïðåäåëåíèå ðàññòîÿíèé îò êàæäîé òî÷êè äî åå ñîñåäåé îò rmin äî rmax.
-#Õîòåë ïîëó÷èòü ïèê îêîëî r=r0, íî íå âûøëî.
+#Позволяет получить распределение расстояний от каждой точки до ее соседей от rmin до rmax.
+#Хотел получить пик около r=r0, но не вышло.
 def get_distances_distribiton(positions, step=0.1, rmin=0, rmax=2):
     n_particles = positions.shape[0]
     number_of_baskets = int((rmax-rmin)/step)
@@ -78,8 +78,8 @@ def get_distances_distribiton(positions, step=0.1, rmin=0, rmax=2):
                 baskets[basket] += dr
     return baskets
 
-#Âû÷èñëÿåò øàã ìåòîäîì Ýéëåðà. ×òîáû ýíåðãèÿ ñèñòåìû ñîõðàíÿëàñü, ïîëüçóþñü ñèìïëåêòíûì ìåòîäîì.
-#Áåðåò ñïèñîê ÷àñòèö, ðàçìåð øàãà, âû÷èñëÿåò ñëåäóþùåå ïîëîæåíèå è ïðîïèñûâàåò åãî ÷àñòèöàì.
+#Вычисляет шаг методом Эйлера. Чтобы энергия системы сохранялась, пользуюсь симплектным методом.
+#Берет список частиц, размер шага, вычисляет следующее положение и прописывает его частицам.
 def euler(particles, dt=0.001):
     coordinates = np.asanyarray([particle.get_coordinates() for particle in particles])
     positions, velocities = np.split(coordinates, 2, 1)
@@ -92,8 +92,8 @@ def euler(particles, dt=0.001):
         particles[i].set_coordinates(next_coordinates[i])  
     return None
 
-#Òî æå ñàìîå ñ ìåòîäîì Ðóíãå-Êóòòà.
-#Íå óâåðåí íàñ÷åò ïðàâèëüíîñòè èìïëåìåíòàöèè.
+#То же самое с методом Рунге-Кутта.
+#Не уверен насчет правильности имплементации.
 def rungeKutta(particles, dt=0.001):
     coordinates = np.asanyarray([particle.get_coordinates() for particle in particles])
     positions, velocities = np.split(coordinates, 2, 1)
@@ -111,33 +111,33 @@ def rungeKutta(particles, dt=0.001):
         particles[i].set_coordinates(next_coordinates[i])
     return None
 
-#Ñïèñîê êîíñòàíò
-G = 1e-4 #Ãðàâèòàöèîííàÿ ïîñòîÿííàÿ
-a = 10 #Æåñòêîñòü ïîòåíöèàëà Ìîðçå
-r0 = 0.1 #Ðàâíîâåñíîå ðàññòîÿíèå â ïîòåíöèàëà Ìîðçà
-world_size = 2 #Ðàçìåð ìèðà ñèìóëÿöèè
-dt = 0.001 #Ðàçìåð øàãà ïî âðåìåíè
+#Список констант
+G = 1e-4 #Гравитационная постоянная
+a = 10 #Жесткость потенциала Морзе
+r0 = 0.1 #Равновесное расстояние в потенциала Морза
+world_size = 2 #Размер мира симуляции
+dt = 0.001 #Размер шага по времени
 
-number_of_particles = 80 #×èñëî ÷àñòèö
+number_of_particles = 80 #Число частиц
 particles = []
 
 for i in range(number_of_particles):
-    x,y = (np.random.rand(2))*world_size #Çàäàåò ïîëîæåíèå ÷àñòèö
-    vx, vy = np.zeros(2) #Çàäàåò ñêîðîñòè ÷àñòèö
-    particle = Particle(np.asarray([x,y,vx,vy])) #Ñîçäàåò ÷àñòèöó
-    particles.append(particle) #Ïðèêðåïëÿåò åå ê ñïèñêó ÷àñòèö
+    x,y = (np.random.rand(2))*world_size #Задает положение частиц
+    vx, vy = np.zeros(2) #Задает скорости частиц
+    particle = Particle(np.asarray([x,y,vx,vy])) #Создает частицу
+    particles.append(particle) #Прикрепляет ее к списку частиц
     
 
-#Íèæå èäåò ñàìà ñèìóëÿöèÿ è åå âèçóàëèçàöèÿ.
-#Åñëè PyGame âûëåòàåò, òî íàäî óäàëèòü îòìå÷åííûå íèæå ñòðîêè.
+#Ниже идет сама симуляция и ее визуализация.
+#Если PyGame вылетает, то надо удалить отмеченные ниже строки.
 background_colour = (255,255,255) 
 screen_size = 300
 
 screen = pygame.display.set_mode((screen_size, screen_size))
 pygame.display.set_caption('Proto')
 screen.fill(background_colour)
-pygame.init() #Óäàëèòü, åñëè âûëåòàåò
-font = pygame.font.Font(None, 32) #Óäàëèòü, åñëè âûëåòàåò
+pygame.init() #Удалить, если вылетает
+font = pygame.font.Font(None, 32) #Удалить, если вылетает
 
 
 i = True
@@ -155,12 +155,12 @@ while True:
             pygame.quit()
             
     screen.fill(background_colour)
-    time_text = 'Time: {0:.1f}'.format(step*dt) #Óäàëèòü, åñëè âûëåòàåò
-    text = font.render(time_text, True, (0, 0, 0)) #Óäàëèòü, åñëè âûëåòàåò
-    screen.blit(text, (5, 5)) #Óäàëèòü, åñëè âûëåòàåò
+    time_text = 'Time: {0:.1f}'.format(step*dt) #Удалить, если вылетает
+    text = font.render(time_text, True, (0, 0, 0)) #Удалить, если вылетает
+    screen.blit(text, (5, 5)) #Удалить, если вылетает
     
-    rungeKutta(particles, dt) #Äåëàåò øàã ñèìóëÿöèè
-    for i, particle in enumerate(particles): #Ïðîðèñîâûâàåò êàæäóþ ÷àñòèöó
+    rungeKutta(particles, dt) #Делает шаг симуляции
+    for i, particle in enumerate(particles): #Прорисовывает каждую частицу
         pygame.draw.circle(screen, particle.colour, [int((i*0.8/world_size+0.1)*screen_size)
                                                      for i in particle.get_coordinates()[0:2]], 2, 1)
         
