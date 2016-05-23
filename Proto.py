@@ -2,9 +2,9 @@ import pygame
 import numpy as np
 import numba as nb
 import math as math
+import scipy.stats as stats
 
 from pygame.locals import *
-import matplotlib.pyplot as plt
 
 #Каждая частица принадлежит классу Particle.
 #Здесь содержится ее местоположение и скорость (вместе они называются coordinates),
@@ -34,15 +34,15 @@ def get_forces(positions):
             dr = (dx * dx + dy * dy)**0.5
             ex = dx/dr
             ey = dy/dr
-            if dr>0.5: #Межмолекулярные взаимодействия на больших расстояниях обрезаются
-                force = G/dr
+            if dr>1: #Межмолекулярные взаимодействия на больших расстояниях обрезаются
+                force = G/(dr+0.01) #Добавляю 0.01, чтобы сила не уходила в бесконечность на очень маленьких расстояниях
             else:
-                force = G/dr**2-2*a*math.exp(a*(r0-dr))*(math.exp(a*(r0-dr))-1)
+                force = G/(dr+0.01)-2*a*math.exp(-a*(dr-r0))*(math.exp(-a*(dr-r0))-1)
             forces[i, 0] += ex * force
             forces[i, 1] += ey * force
             forces[j, 0] -= ex * force
             forces[j, 1] -= ey * force
-    return(forces)
+    return(forces))
 
 #Эта функция вычисляет кинетическую и потенциальную энергию системы в данной конфигурации.
 @nb.jit(nopython=True)
@@ -80,45 +80,55 @@ def get_distances_distribiton(positions, step=0.1, rmin=0, rmax=2):
 
 #Вычисляет шаг методом Эйлера. Чтобы энергия системы сохранялась, пользуюсь симплектным методом.
 #Берет список частиц, размер шага, вычисляет следующее положение и прописывает его частицам.
+#Вычисляет шаг методом Эйлера. Чтобы энергия системы сохранялась, пользуюсь симплектным методом.
+#Берет список частиц, размер шага, вычисляет следующее положение и прописывает его частицам.
 def euler(particles, dt=0.001):
     coordinates = np.asanyarray([particle.get_coordinates() for particle in particles])
     positions, velocities = np.split(coordinates, 2, 1)
     
     next_velocities = velocities + get_forces(positions)*dt
     next_positions = positions + next_velocities*dt
+    next_positions, next_velocities = bounce(next_positions, next_velocities)
+    next_coordinates = np.append(next_positions, next_velocities, 1)
     next_coordinates = np.append(next_positions, next_velocities, 1)
     
     for i in range(len(particles)):
         particles[i].set_coordinates(next_coordinates[i])  
     return None
 
-#То же самое с методом Рунге-Кутта.
-#Не уверен насчет правильности имплементации.
+#То же самое с методом Рунге-Кутты.
 def rungeKutta(particles, dt=0.001):
     coordinates = np.asanyarray([particle.get_coordinates() for particle in particles])
     positions, velocities = np.split(coordinates, 2, 1)
     
-    k1 = get_forces(positions)
-    k2 = get_forces(positions+0.5*k1*dt)
-    k3 = get_forces(positions+0.5*k2*dt)
-    k4 = get_forces(positions+k3*dt)
+    k1v = get_forces(positions)
+    k1r = velocities
+    k2v = get_forces(positions+0.5*k1r*dt)
+    k2r = velocities+0.5*k1v*dt
+    k3v = get_forces(positions+0.5*k2r*dt)
+    k3r = velocities+0.5*k2v*dt
+    k4v = get_forces(positions+k3r*dt)
+    k4r = velocities+k3v*dt
     
-    next_velocities = velocities + (k1+2*k2+2*k3+k4)/6*dt
-    next_positions = positions + next_velocities*dt
+    next_velocities = velocities + (k1v+2*k2v+2*k3v+k4v)/6*dt
+    next_positions = positions + (k1r+2*k2r+2*k3r+k4r)/6*dt
+    next_positions, next_velocities = bounce(next_positions, next_velocities)
     next_coordinates = np.append(next_positions, next_velocities, 1)
-    
+            
     for i in range(len(particles)):
-        particles[i].set_coordinates(next_coordinates[i])
+        particles[i].set_coordinates(next_coordinates[i])  
     return None
 
 #============================================================================================================================
 
 #Список констант
-G = 1e-4 #Гравитационная постоянная
+G = 0#1e-4 #Гравитационная постоянная
 a = 10 #Жесткость потенциала Морзе
 r0 = 0.1 #Равновесное расстояние в потенциала Морза
-world_size = 2 #Размер мира симуляции
-dt = 0.001 #Размер шага по времени
+world_size = 10 #Размер мира симуляции
+Maxwell_scaling = 0.001 #После столкновения со стенкой частица получает скорость,
+                         #соответствующую умноженному на этот параметр распределению Максвелла
+dt = 0.01 #Размер шага по времени
 
 number_of_particles = 80 #Число частиц
 particles = []
@@ -128,7 +138,6 @@ for i in range(number_of_particles):
     vx, vy = np.zeros(2) #Задает скорости частиц
     particle = Particle(np.asarray([x,y,vx,vy])) #Создает частицу
     particles.append(particle) #Прикрепляет ее к списку частиц
-    
 
 #Ниже идет сама симуляция и ее визуализация.
 #Если PyGame вылетает, то надо удалить отмеченные ниже строки.
@@ -141,7 +150,7 @@ screen.fill(background_colour)
 pygame.init() #Удалить, если вылетает
 font = pygame.font.Font(None, 32) #Удалить, если вылетает
 
-
+#Делает необходимым клик мыши в окне для запуска симуляции
 i = True
 while i:
     for event in pygame.event.get():
@@ -168,4 +177,3 @@ while True:
         
     pygame.display.flip()
     step += 1
-
